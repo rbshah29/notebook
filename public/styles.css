@@ -1,0 +1,45 @@
+/* public/styles.css */
+body{
+  background-color: #76a5af !important;
+}
+.note {
+  position: absolute;
+  background-color: #133337;
+  color: beige;
+  padding: 10px;
+  border: 1px solid #000;
+  cursor: grab;
+}
+
+.note button {
+  margin-top: 5px;
+}
+
+.add-btn {
+  margin-top: 47px;
+  margin-left: 10px;
+  border-radius: 40% !important;
+  border: 5px solid black !important;
+}
+
+.delete-btn {
+  margin-top: 5px;
+  margin-left: 5px;
+}
+
+.edit-btn {
+  margin-top: 5px;
+  margin-left: 5px;
+}
+
+.header-container {
+  color: azure;
+  position: fixed;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100; /* Adjust z-index value to ensure the header is above other content */
+  background-color: #1a4d58;
+  top: 0; /* Ensures the header starts from the top of the viewport */
+}
