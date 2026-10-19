@@ -13,6 +13,7 @@ import { Bold, Italic, Underline, Strikethrough, Code, Highlighter, Link2 } from
 import { updateNote, formatFull, type Note, type NotePatch } from '@/lib/notes';
 import { keys } from '@/lib/shortcuts';
 import Toolbar, { ToolButton, LinkForm } from './Toolbar';
+import { CodeBlock } from './CodeBlock';
 
 export type EditorHandle = {
   /** Persists pending changes immediately. Resolves false if the save failed. */
@@ -131,7 +132,8 @@ export default function Editor({ note, autoFocus, scratch = false, onChange, lea
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ link: { openOnClick: false, autolink: true, defaultProtocol: 'https' } }),
+      StarterKit.configure({ codeBlock: false, link: { openOnClick: false, autolink: true, defaultProtocol: 'https' } }),
+      CodeBlock,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Highlight,
       TaskList,

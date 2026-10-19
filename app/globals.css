@@ -24,6 +24,21 @@
   --mark: rgba(250, 204, 21, 0.38);
   --selection: rgba(59, 99, 217, 0.18);
   --code-bg: #f3f3f1;
+  /* Syntax colors (VS Code Light+) */
+  --syn-keyword: #af00db;
+  --syn-storage: #0000ff;
+  --syn-string: #a31515;
+  --syn-number: #098658;
+  --syn-comment: #008000;
+  --syn-function: #795e26;
+  --syn-type: #267f99;
+  --syn-variable: #001080;
+  --syn-tag: #800000;
+  --syn-attr: #e50000;
+  --syn-regexp: #811f3f;
+  --syn-meta: #0000ff;
+  --syn-added: #098658;
+  --syn-deleted: #a31515;
   --toast-bg: #1f1f1e;
   --toast-text: #f5f5f4;
   --shadow-sm: 0 1px 2px rgba(15, 15, 15, 0.06);
@@ -63,6 +78,21 @@
   --mark: rgba(250, 204, 21, 0.24);
   --selection: rgba(130, 160, 255, 0.28);
   --code-bg: #222225;
+  /* Syntax colors (VS Code Dark+) */
+  --syn-keyword: #c586c0;
+  --syn-storage: #569cd6;
+  --syn-string: #ce9178;
+  --syn-number: #b5cea8;
+  --syn-comment: #6a9955;
+  --syn-function: #dcdcaa;
+  --syn-type: #4ec9b0;
+  --syn-variable: #9cdcfe;
+  --syn-tag: #569cd6;
+  --syn-attr: #9cdcfe;
+  --syn-regexp: #d16969;
+  --syn-meta: #569cd6;
+  --syn-added: #b5cea8;
+  --syn-deleted: #ce9178;
   --toast-bg: #f4f4f5;
   --toast-text: #18181b;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -707,16 +737,64 @@ kbd {
   font-size: 0.86em;
   color: var(--strong);
 }
-.tiptap pre {
+.tiptap .code-block {
   margin: 1.2em 0;
-  padding: 14px 16px;
-  overflow-x: auto;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--code-bg);
-  line-height: 1.6;
 }
-.tiptap pre code { padding: 0; background: none; font-size: 13.5px; color: var(--text); }
+.code-block-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 0 10px;
+  user-select: none;
+}
+.code-lang, .code-copy {
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font: 500 12px var(--font);
+  cursor: pointer;
+}
+.code-lang { margin-left: -8px; }
+.code-lang:hover, .code-copy:hover { background: var(--hover); color: var(--text); }
+.code-lang:focus-visible, .code-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.code-lang option { background: var(--surface); color: var(--text); }
+.code-copy { display: inline-flex; align-items: center; gap: 5px; opacity: 0; transition: opacity 120ms var(--ease); }
+.code-block:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
+@media (hover: none) { .code-copy { opacity: 1; } }
+.tiptap pre {
+  margin: 0;
+  padding: 8px 16px 14px;
+  overflow-x: auto;
+  line-height: 1.6;
+  tab-size: 4;
+}
+.tiptap pre code { display: block; padding: 0; background: none; font-size: 13.5px; color: var(--text); white-space: pre; }
+
+/* Syntax highlighting (highlight.js classes from lowlight) */
+.tiptap pre .hljs-comment, .tiptap pre .hljs-quote { color: var(--syn-comment); font-style: italic; }
+.tiptap pre .hljs-keyword, .tiptap pre .hljs-selector-tag { color: var(--syn-keyword); }
+.tiptap pre .hljs-literal, .tiptap pre .hljs-built_in, .tiptap pre .hljs-doctag { color: var(--syn-storage); }
+.tiptap pre .hljs-string, .tiptap pre .hljs-char, .tiptap pre .hljs-template-tag { color: var(--syn-string); }
+.tiptap pre .hljs-number, .tiptap pre .hljs-bullet { color: var(--syn-number); }
+.tiptap pre .hljs-title.function_, .tiptap pre .hljs-title.function_ *, .tiptap pre .hljs-section { color: var(--syn-function); }
+.tiptap pre .hljs-title, .tiptap pre .hljs-title.class_, .tiptap pre .hljs-type, .tiptap pre .hljs-class .hljs-title { color: var(--syn-type); }
+.tiptap pre .hljs-variable, .tiptap pre .hljs-params, .tiptap pre .hljs-property, .tiptap pre .hljs-attr, .tiptap pre .hljs-template-variable, .tiptap pre .hljs-symbol { color: var(--syn-variable); }
+.tiptap pre .hljs-tag, .tiptap pre .hljs-name, .tiptap pre .hljs-selector-id, .tiptap pre .hljs-selector-class { color: var(--syn-tag); }
+.tiptap pre .hljs-attribute, .tiptap pre .hljs-selector-attr, .tiptap pre .hljs-selector-pseudo { color: var(--syn-attr); }
+.tiptap pre .hljs-regexp, .tiptap pre .hljs-link { color: var(--syn-regexp); }
+.tiptap pre .hljs-meta, .tiptap pre .hljs-meta .hljs-keyword { color: var(--syn-meta); }
+.tiptap pre .hljs-meta .hljs-string { color: var(--syn-string); }
+.tiptap pre .hljs-addition { color: var(--syn-added); }
+.tiptap pre .hljs-deletion { color: var(--syn-deleted); }
+.tiptap pre .hljs-emphasis { font-style: italic; }
+.tiptap pre .hljs-strong { font-weight: 700; }
 .tiptap hr { margin: 2em 0; border: none; border-top: 1px solid var(--border-strong); }
 .tiptap hr.ProseMirror-selectednode { border-top-color: var(--accent); }
 
