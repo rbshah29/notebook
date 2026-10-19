@@ -94,7 +94,7 @@ export default function Toolbar({ editor }: { editor: Editor }) {
       <ToolButton label="Numbered list" shortcut={keys('Mod+Shift+7')} active={s.orderedList} onClick={() => c().toggleOrderedList().run()}><ListOrdered size={z} /></ToolButton>
       <ToolButton label="Checklist" shortcut={keys('Mod+Shift+9')} active={s.taskList} onClick={() => c().toggleTaskList().run()}><ListChecks size={z} /></ToolButton>
       <ToolButton label="Quote" shortcut={keys('Mod+Shift+B')} active={s.blockquote} onClick={() => c().toggleBlockquote().run()}><Quote size={z} /></ToolButton>
-      <ToolButton label="Code block" shortcut={keys('Mod+Alt+C')} active={s.codeBlock} onClick={() => c().toggleCodeBlock().run()}><SquareCode size={z} /></ToolButton>
+      <ToolButton label="Code block" shortcut={keys('Mod+`')} active={s.codeBlock} onClick={() => c().toggleCodeBlock().run()}><SquareCode size={z} /></ToolButton>
       <ToolButton label="Divider" onClick={() => c().setHorizontalRule().run()}><Minus size={z} /></ToolButton>
       <Menu label="Alignment" triggerClassName="tb-btn" align="start"
         items={ALIGNS.map((a) => ({

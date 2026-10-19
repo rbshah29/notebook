@@ -20,6 +20,13 @@ export const CodeBlock = CodeBlockLowlight.extend({
   addKeyboardShortcuts() {
     return {
       ...this.parent?.(),
+      'Mod-`': () => this.editor.commands.toggleCodeBlock(),
+      // Select just the code instead of the whole note.
+      'Mod-a': ({ editor }) => {
+        const { $from } = editor.state.selection;
+        if ($from.parent.type !== this.type) return false;
+        return editor.commands.setTextSelection({ from: $from.start(), to: $from.end() });
+      },
       Enter: ({ editor }) => {
         const { $from, from, to } = editor.state.selection;
         if ($from.parent.type !== this.type) return false;

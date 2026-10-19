@@ -47,4 +47,13 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Divider', '---'],
     ],
   },
+  {
+    group: 'Code blocks',
+    items: [
+      ['Insert / toggle code block', 'Mod+` / Mod+Alt+C'],
+      ['Indent / outdent', 'Tab / Shift+Tab'],
+      ['Select all code in block', 'Mod+A'],
+      ['Leave code block', 'Mod+Enter'],
+    ],
+  },
 ];

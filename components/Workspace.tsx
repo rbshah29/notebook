@@ -266,18 +266,28 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
     requestAnimationFrame(() => { searchRef.current?.focus(); searchRef.current?.select(); });
   }, [setCollapsed]);
 
+  const saveNow = useCallback(async () => {
+    if (latest.current.activeId === SCRATCH_ID) {
+      toast({ message: 'The scratchpad is temporary and isn’t saved' });
+      return;
+    }
+    if (!editorRef.current) return;
+    if (await editorRef.current.flush()) toast({ tone: 'success', message: 'Saved' });
+    else toast({ tone: 'error', message: 'Couldn’t save. Your changes are kept and will retry.' });
+  }, [toast]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isMod(e)) return;
       if (e.code === 'KeyK' && !e.shiftKey && !e.altKey) { e.preventDefault(); focusSearch(); }
       else if (e.code === 'KeyN' && e.altKey) { e.preventDefault(); newNote(); }
       else if (e.code === 'Backslash') { e.preventDefault(); setCollapsed((c) => !c); }
-      else if (e.code === 'KeyS' && !e.shiftKey) { e.preventDefault(); editorRef.current?.flush(); }
+      else if (e.code === 'KeyS' && !e.shiftKey) { e.preventDefault(); saveNow(); }
       else if (e.code === 'Slash') { e.preventDefault(); setShortcutsOpen((o) => !o); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [focusSearch, newNote, setCollapsed]);
+  }, [focusSearch, newNote, setCollapsed, saveNow]);
 
   const loading = notes === null && !loadError;
   const isPinned = active ? pinnedIds.has(active.id) : false;
