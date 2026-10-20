@@ -2,7 +2,7 @@
 import { memo, useEffect, useState } from 'react';
 import {
   Plus, Search, X, Pin, PinOff, Copy, Trash2, MoreHorizontal, PanelLeftClose, ArrowDownUp,
-  LogOut, Keyboard, Sun, Moon, Monitor, SearchX, NotebookPen, Settings, Globe,
+  LogOut, Keyboard, Sun, Moon, Monitor, SearchX, NotebookPen, Settings, Globe, Lock,
 } from 'lucide-react';
 import Menu from '@/components/ui/Menu';
 import { formatRelative, formatFull, SCRATCH_ID, type Note } from '@/lib/notes';
@@ -199,13 +199,14 @@ const NoteRow = memo(function NoteRow({
   const active = note.id === activeId;
   const pinned = pinnedIds.has(note.id);
   const text = textOf(note);
-  const preview = excerpt(text, query) || 'No additional text';
+  const preview = note.is_locked ? 'Locked' : excerpt(text, query) || 'No additional text';
 
   return (
     <li className={`note-item${active ? ' active' : ''}`}>
       <button className="note-row" onClick={() => onSelect(note.id)}
         aria-current={active ? 'page' : undefined}>
         <span className="note-row-title">
+          {note.is_locked && <Lock size={12} className="locked-icon" aria-label="Locked" />}
           {note.share_token && <Globe size={12} className="shared-icon" aria-label="Shared publicly" />}
           <Highlight text={note.title.trim() || 'Untitled'} query={query} />
         </span>
@@ -220,9 +221,9 @@ const NoteRow = memo(function NoteRow({
         <Menu label="Note actions" triggerClassName="icon-btn sm"
           items={[
             { label: pinned ? 'Unpin' : 'Pin to top', icon: pinned ? <PinOff size={15} /> : <Pin size={15} />, onSelect: () => onTogglePin(note.id) },
-            { label: 'Duplicate', icon: <Copy size={15} />, onSelect: () => onDuplicate(note.id) },
+            ...(note.is_locked ? [] : [{ label: 'Duplicate', icon: <Copy size={15} />, onSelect: () => onDuplicate(note.id) }]),
             { separator: true },
-            { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onSelect: () => onDelete(note.id) },
+            { label: note.is_locked ? 'Delete…' : 'Delete', icon: <Trash2 size={15} />, danger: true, onSelect: () => onDelete(note.id) },
           ]}>
           <MoreHorizontal size={15} />
         </Menu>

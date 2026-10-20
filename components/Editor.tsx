@@ -23,6 +23,10 @@ export type EditorHandle = {
 
 type SaveStatus = 'saved' | 'pending' | 'error';
 
+/** Persists a patch. Locked notes pass their own, which sends content through the PIN check. */
+export type SaveFn = (id: string, patch: NotePatch) => PromiseLike<{ error: unknown }>;
+const defaultSave: SaveFn = (id, patch) => updateNote(id, patch);
+
 type Props = {
   note: Note;
   autoFocus?: 'title' | 'end';
@@ -31,6 +35,8 @@ type Props = {
   onChange: (id: string, patch: NotePatch) => void;
   leading?: React.ReactNode;
   actions?: React.ReactNode;
+  /** Overrides how changes are saved (used for PIN-locked notes). */
+  save?: SaveFn;
   /** Sidebar search terms to highlight in the note. */
   searchTerms?: string[];
   ref?: React.Ref<EditorHandle>;
@@ -42,16 +48,17 @@ const SAVE_DELAY = 800;
  * Debounced, serialized autosave. Only one request is in flight at a time so updates can't land
  * out of order; failures keep the patch and retry with backoff.
  */
-function useAutosave(noteId: string, onSaved: (patch: NotePatch) => void) {
+function useAutosave(noteId: string, onSaved: (patch: NotePatch) => void, save: SaveFn) {
   const [status, setStatus] = useState<SaveStatus>('saved');
   const pending = useRef<NotePatch>({});
   const inFlight = useRef<Promise<void> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const failures = useRef(0);
   const onSavedRef = useRef(onSaved);
+  const saveRef = useRef(save);
   const flushRef = useRef<() => Promise<boolean>>(async () => true);
 
-  useEffect(() => { onSavedRef.current = onSaved; });
+  useEffect(() => { onSavedRef.current = onSaved; saveRef.current = save; });
 
   const flush = useCallback(async (): Promise<boolean> => {
     clearTimeout(timer.current);
@@ -63,7 +70,7 @@ function useAutosave(noteId: string, onSaved: (patch: NotePatch) => void) {
 
     const saved: NotePatch = { ...patch, updated_at: new Date().toISOString() };
     let ok = false;
-    const request = updateNote(noteId, saved).then(({ error }) => {
+    const request = Promise.resolve(saveRef.current(noteId, saved)).then(({ error }) => {
       ok = !error;
       if (error) console.error('Save failed', error);
     }, (err) => console.error('Save failed', err));
@@ -119,7 +126,7 @@ function useAutosave(noteId: string, onSaved: (patch: NotePatch) => void) {
 
 const NO_TERMS: string[] = [];
 
-export default function Editor({ note, autoFocus, scratch = false, onChange, leading, actions, searchTerms = NO_TERMS, ref }: Props) {
+export default function Editor({ note, autoFocus, scratch = false, onChange, leading, actions, save = defaultSave, searchTerms = NO_TERMS, ref }: Props) {
   const toast = useToast();
   const settings = useSettings();
   const [title, setTitle] = useState(note.title);
@@ -127,7 +134,7 @@ export default function Editor({ note, autoFocus, scratch = false, onChange, lea
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const [editingLink, setEditingLink] = useState(false);
 
-  const { status, flush, queue: queueSave } = useAutosave(note.id, (patch) => onChange(note.id, patch));
+  const { status, flush, queue: queueSave } = useAutosave(note.id, (patch) => onChange(note.id, patch), save);
   const queue = useCallback((patch: NotePatch) => {
     if (scratch) onChange(note.id, patch);
     else queueSave(patch);

@@ -8,6 +8,8 @@ export type Note = {
   updated_at: string;
   /** Set while the note is shared publicly; anyone with the link can read it. */
   share_token?: string | null;
+  /** PIN-locked: content is null here and only comes back from unlockNote() with the PIN. */
+  is_locked?: boolean;
 };
 
 export type NotePatch = Partial<Pick<Note, 'title' | 'content' | 'updated_at'>>;
@@ -16,26 +18,32 @@ export type NotePatch = Partial<Pick<Note, 'title' | 'content' | 'updated_at'>>;
 export const SCRATCH_ID = 'scratchpad';
 
 const BASE_COLUMNS = 'id, title, content, updated_at';
-let COLUMNS = `${BASE_COLUMNS}, share_token`;
+/** Columns added by optional migrations; each is dropped if its migration hasn't been run. */
+const OPTIONAL_COLUMNS = new Set(['share_token', 'is_locked']);
+const columns = () => [BASE_COLUMNS, ...OPTIONAL_COLUMNS].join(', ');
 
 /** False until supabase/sharing-and-images.sql has been run (the share_token column is missing). */
 export let sharingAvailable = true;
+/** False until supabase/note-locks.sql has been run (the is_locked column is missing). */
+export let lockingAvailable = true;
 
 export async function fetchNotes() {
-  const query = () => getSupabase().from('documents').select(COLUMNS).order('updated_at', { ascending: false })
-    .overrideTypes<Note[], { merge: false }>();
-  const result = await query();
-  // 42703 = undefined column: the sharing migration hasn't been run. Keep the app working without it.
-  if (result.error?.code === '42703' && sharingAvailable) {
-    sharingAvailable = false;
-    COLUMNS = BASE_COLUMNS;
-    return query();
+  for (;;) {
+    const result = await getSupabase().from('documents').select(columns()).order('updated_at', { ascending: false })
+      .overrideTypes<Note[], { merge: false }>();
+    // 42703 = undefined column: that migration hasn't been run. Keep the app working without it.
+    const missing = result.error?.code === '42703'
+      ? [...OPTIONAL_COLUMNS].find((c) => result.error!.message.includes(c))
+      : undefined;
+    if (!missing) return result;
+    OPTIONAL_COLUMNS.delete(missing);
+    if (missing === 'share_token') sharingAvailable = false;
+    if (missing === 'is_locked') lockingAvailable = false;
   }
-  return result;
 }
 
 export async function createNote(fields: Pick<Note, 'title' | 'content'> = { title: '', content: null }) {
-  return getSupabase().from('documents').insert(fields).select(COLUMNS).single()
+  return getSupabase().from('documents').insert(fields).select(columns()).single()
     .overrideTypes<Note, { merge: false }>();
 }
 

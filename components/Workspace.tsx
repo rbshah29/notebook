@@ -3,15 +3,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, FileText, PanelLeftOpen, ChevronLeft, Pin, MoreHorizontal, Copy, Trash2, CloudOff,
   RotateCw, Save, Eraser, Share2, FileDown, ClipboardCopy, Printer, Settings as SettingsIcon, Keyboard,
-  PanelLeft, Sun, Moon, LogOut, NotebookPen, Search, PinOff,
+  PanelLeft, Sun, Moon, LogOut, NotebookPen, Search, PinOff, Lock, LockOpen,
 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
 import {
-  fetchNotes, createNote, deleteNote, toPlainText, SCRATCH_ID, type Note, type NotePatch,
+  fetchNotes, createNote, deleteNote, updateNote, toPlainText, SCRATCH_ID, type Note, type NotePatch,
 } from '@/lib/notes';
+import {
+  lockNote, unlockNote, saveLockedNote, removeNoteLock, deleteLockedNote, lockErrorMessage,
+} from '@/lib/locks';
 import { usePersistentState } from '@/lib/usePersistentState';
 import { isMod, keys } from '@/lib/shortcuts';
-import Editor, { type EditorHandle } from '@/components/Editor';
+import Editor, { type EditorHandle, type SaveFn } from '@/components/Editor';
+import { LockScreen, PinDialog } from '@/components/Lock';
 import Sidebar, { type SortKey } from '@/components/Sidebar';
 import ShortcutsDialog from '@/components/ShortcutsDialog';
 import SettingsDialog from '@/components/SettingsDialog';
@@ -58,6 +62,9 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  // The one locked note currently open with its PIN. It locks again as soon as you leave it.
+  const [unlocked, setUnlocked] = useState<{ id: string; pin: string; content: Note['content'] } | null>(null);
+  const [pinPrompt, setPinPrompt] = useState<{ kind: 'lock' | 'remove' | 'delete'; id: string } | null>(null);
   const settings = useSettings();
   const [scratch, setScratch] = useState<Note>(emptyScratch);
   // Bumped on "Clear" so the scratch editor remounts with empty content.
@@ -119,13 +126,17 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
 
   const select = useCallback((id: string, focus?: 'title' | 'end') => {
     setActiveId(id);
+    setUnlocked((u) => (u?.id === id ? u : null));
     setMobileView('note');
     setFocusRequest(focus ? { id, target: focus } : null);
   }, []);
 
   const onNoteChange = useCallback((id: string, patch: NotePatch) => {
     if (id === SCRATCH_ID) return setScratch((n) => ({ ...n, ...patch }));
-    setNotes((all) => all?.map((n) => (n.id === id ? { ...n, ...patch } : n)) ?? all);
+    // A locked note's content never goes into the list, so it can't show up in previews or search.
+    const { content, ...rest } = patch;
+    setNotes((all) => all?.map((n) => (n.id === id ? { ...n, ...(n.is_locked ? rest : patch) } : n)) ?? all);
+    if (content !== undefined) setUnlocked((u) => (u?.id === id ? { ...u, content } : u));
   }, []);
 
   // Handlers read the latest values through a ref so they stay stable for the memoized list rows.
@@ -193,6 +204,7 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
   const remove = useCallback((id: string) => {
     const note = currentNote(id);
     if (!note) return;
+    if (note.is_locked) return setPinPrompt({ kind: 'delete', id });
     const { activeId: openId, order, pinnedIds: pins } = latest.current;
 
     if (id === openId) {
@@ -231,6 +243,68 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
         () => toast({ tone: 'success', message: 'Link created and copied' }), () => {});
     } else toast({ message: 'Sharing turned off. The old link no longer works.' });
   }, [toast]);
+
+  /** Moves to the neighbouring note in the list, as after a delete. */
+  const leaveNote = useCallback((id: string) => {
+    const { activeId: openId, order } = latest.current;
+    if (id !== openId) return;
+    const i = order.findIndex((n) => n.id === id);
+    const next = order[i + 1] ?? order[i - 1] ?? null;
+    setActiveId(next?.id ?? null);
+    if (!next) setMobileView('list');
+  }, []);
+
+  const unlock = useCallback(async (id: string, pin: string) => {
+    const r = await unlockNote(id, pin);
+    if (!r.ok) return lockErrorMessage(r);
+    setUnlocked({ id, pin, content: r.content ?? null });
+    setFocusRequest({ id, target: 'end' });
+    return null;
+  }, []);
+
+  const lockNow = useCallback(async () => {
+    await editorRef.current?.flush();
+    setUnlocked(null);
+  }, []);
+
+  /** Runs the action the PIN dialog was opened for. Resolves to an error message, or null when done. */
+  const submitPin = useCallback(async (pin: string): Promise<string | null> => {
+    if (!pinPrompt) return null;
+    const { kind, id } = pinPrompt;
+    const isOpen = latest.current.activeId === id;
+    // Unsaved edits must land (through the right save path) before the lock changes.
+    if (isOpen && editorRef.current && !(await editorRef.current.flush())) {
+      return 'Your latest changes haven’t saved yet. Check your connection and try again.';
+    }
+
+    if (kind === 'lock') {
+      // The editor always holds the note as JSON, whatever format it was stored in.
+      if (!isOpen || !editorRef.current) return 'Open the note to lock it.';
+      const { content } = editorRef.current.snapshot();
+      const r = await lockNote(id, pin, content);
+      if (!r.ok) return lockErrorMessage(r);
+      setNotes((all) => all?.map((n) => (n.id === id ? { ...n, content: null, is_locked: true, share_token: null } : n)) ?? all);
+      if (isOpen) setUnlocked({ id, pin, content });
+      toast({ tone: 'success', message: isOpen ? 'Note locked. It locks again when you leave it.' : 'Note locked' });
+    } else if (kind === 'remove') {
+      const r = await removeNoteLock(id, pin);
+      if (!r.ok) return lockErrorMessage(r);
+      setNotes((all) => all?.map((n) => (n.id === id ? { ...n, content: r.content ?? null, is_locked: false } : n)) ?? all);
+      setUnlocked((u) => (u?.id === id ? null : u));
+      toast({ tone: 'success', message: 'Lock removed' });
+    } else {
+      const r = await deleteLockedNote(id, pin);
+      if (!r.ok) return lockErrorMessage(r);
+      const title = latest.current.notes?.find((n) => n.id === id)?.title.trim() || 'Untitled';
+      leaveNote(id);
+      setUnlocked((u) => (u?.id === id ? null : u));
+      setNotes((all) => all?.filter((n) => n.id !== id) ?? all);
+      setPinnedList((list) => list.filter((x) => x !== id));
+      toast({ message: `Deleted “${title}”` });
+    }
+    setPinPrompt(null);
+    return null;
+  }, [pinPrompt, leaveNote, setPinnedList, toast]);
 
   /** The open note (or scratchpad) including edits that haven't saved yet. */
   const openNoteSnapshot = useCallback((): Pick<Note, 'title' | 'content'> | null => {
@@ -343,6 +417,25 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
   }, [focusSearch, newNote, setCollapsed, saveNow]);
 
   const isPinned = active ? pinnedIds.has(active.id) : false;
+  const isLocked = !isScratch && !!active?.is_locked;
+  const openUnlocked = isLocked && unlocked?.id === active?.id ? unlocked : null;
+  const showLockScreen = isLocked && !openUnlocked;
+  const unlockedPin = openUnlocked?.pin;
+
+  // Locked notes save their content through the PIN-checked function; the title saves normally.
+  const lockedSave = useMemo((): SaveFn | undefined => {
+    if (!unlockedPin) return undefined;
+    return async (id, patch) => {
+      const { content, ...rest } = patch;
+      if (content !== undefined) {
+        const r = await saveLockedNote(id, unlockedPin, content);
+        if (!r.ok) return { error: lockErrorMessage(r) };
+      }
+      if (rest.title === undefined) return { error: null }; // updated_at is set by save_locked_note
+      return updateNote(id, rest);
+    };
+  }, [unlockedPin]);
+
   // Unavailable actions are `false`; the palette skips them.
   const commands = useMemo((): (Command | false)[] => {
     const note = active && !isScratch ? active : null;
@@ -350,12 +443,15 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
       { id: 'new', label: 'New note', icon: <Plus size={15} />, hint: keys('Mod+Alt+N'), keywords: 'create add', run: newNote },
       { id: 'search', label: 'Search notes', icon: <Search size={15} />, hint: keys('Mod+K'), keywords: 'find', run: focusSearch },
       { id: 'scratch', label: 'Open scratchpad', icon: <NotebookPen size={15} />, keywords: 'temporary draft', run: () => select(SCRATCH_ID, 'end') },
-      !!note && { id: 'share', label: 'Share note…', icon: <Share2 size={15} />, keywords: 'public link publish', run: () => setShareOpen(true) },
+      !!note && !isLocked && { id: 'share', label: 'Share note…', icon: <Share2 size={15} />, keywords: 'public link publish', run: () => setShareOpen(true) },
+      !!note && !isLocked && { id: 'lock', label: 'Lock note with PIN…', icon: <Lock size={15} />, keywords: 'pin password protect private', run: () => setPinPrompt({ kind: 'lock', id: note.id }) },
+      !!note && !!openUnlocked && { id: 'lock-now', label: 'Lock note now', icon: <Lock size={15} />, keywords: 'pin close hide', run: lockNow },
+      !!note && !!openUnlocked && { id: 'remove-lock', label: 'Remove lock…', icon: <LockOpen size={15} />, keywords: 'pin unlock password', run: () => setPinPrompt({ kind: 'remove', id: note.id }) },
       !!note && { id: 'pin', label: isPinned ? 'Unpin note' : 'Pin note', icon: isPinned ? <PinOff size={15} /> : <Pin size={15} />, run: () => togglePin(note.id) },
-      !!note && { id: 'duplicate', label: 'Duplicate note', icon: <Copy size={15} />, keywords: 'copy', run: () => duplicate(note.id) },
-      !!active && { id: 'copy-md', label: 'Copy as Markdown', icon: <ClipboardCopy size={15} />, keywords: 'export clipboard', run: copyMarkdown },
-      !!active && { id: 'download-md', label: 'Download as Markdown', icon: <FileDown size={15} />, keywords: 'export save md file', run: downloadMarkdown },
-      !!active && { id: 'pdf', label: 'Export as PDF', icon: <Printer size={15} />, keywords: 'print save', run: exportPdf },
+      !!note && !isLocked && { id: 'duplicate', label: 'Duplicate note', icon: <Copy size={15} />, keywords: 'copy', run: () => duplicate(note.id) },
+      !!active && !showLockScreen && { id: 'copy-md', label: 'Copy as Markdown', icon: <ClipboardCopy size={15} />, keywords: 'export clipboard', run: copyMarkdown },
+      !!active && !showLockScreen && { id: 'download-md', label: 'Download as Markdown', icon: <FileDown size={15} />, keywords: 'export save md file', run: downloadMarkdown },
+      !!active && !showLockScreen && { id: 'pdf', label: 'Export as PDF', icon: <Printer size={15} />, keywords: 'print save', run: exportPdf },
       !!note && { id: 'delete', label: 'Delete note', icon: <Trash2 size={15} />, keywords: 'remove trash', run: () => remove(note.id) },
       { id: 'sidebar', label: 'Toggle sidebar', icon: <PanelLeft size={15} />, hint: keys('Mod+\\'), run: () => setCollapsed((c) => !c) },
       { id: 'light', label: 'Switch to light theme', icon: <Sun size={15} />, keywords: 'appearance mode', run: () => applyTheme('light') },
@@ -364,7 +460,7 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
       { id: 'shortcuts', label: 'Keyboard shortcuts', icon: <Keyboard size={15} />, hint: keys('Mod+/'), keywords: 'keys help', run: () => setShortcutsOpen(true) },
       { id: 'signout', label: 'Sign out', icon: <LogOut size={15} />, keywords: 'log out', run: signOut },
     ];
-  }, [active, isScratch, isPinned, newNote, focusSearch, select, togglePin, duplicate, remove, copyMarkdown, downloadMarkdown, exportPdf, setCollapsed, signOut]);
+  }, [active, isScratch, isPinned, isLocked, openUnlocked, showLockScreen, lockNow, newNote, focusSearch, select, togglePin, duplicate, remove, copyMarkdown, downloadMarkdown, exportPdf, setCollapsed, signOut]);
 
   const exportItems = [
     { label: 'Copy as Markdown', icon: <ClipboardCopy size={15} />, onSelect: copyMarkdown },
@@ -435,11 +531,29 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
             <span className="skeleton" style={{ width: '82%' }} />
             <span className="skeleton" style={{ width: '64%' }} />
           </div>
+        ) : active && showLockScreen ? (
+          <LockScreen key={active.id} title={active.title} leading={leading}
+            onUnlock={(pin) => unlock(active.id, pin)}
+            actions={(
+              <>
+                <button className={`icon-btn${isPinned ? ' on' : ''}`} onClick={() => togglePin(active.id)}
+                  aria-pressed={isPinned} aria-label={isPinned ? 'Unpin note' : 'Pin note'}
+                  title={isPinned ? 'Unpin' : 'Pin to top'}>
+                  <Pin size={16} />
+                </button>
+                <Menu label="More actions" items={[
+                  { label: 'Delete…', icon: <Trash2 size={15} />, danger: true, onSelect: () => remove(active.id) },
+                ]}>
+                  <MoreHorizontal size={16} />
+                </Menu>
+              </>
+            )} />
         ) : active ? (
           <Editor
             key={isScratch ? `${SCRATCH_ID}-${scratchVersion}` : active.id}
             ref={editorRef}
-            note={active}
+            note={openUnlocked ? { ...active, content: openUnlocked.content } : active}
+            save={lockedSave}
             scratch={isScratch}
             autoFocus={focusRequest?.id === active.id ? focusRequest.target : undefined}
             onChange={onNoteChange}
@@ -461,18 +575,32 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
               </>
             ) : (
               <>
-                <button className={`icon-btn${active.share_token ? ' on' : ''}`} onClick={() => setShareOpen(true)}
-                  aria-label={active.share_token ? 'Shared publicly. Manage link' : 'Share note'}
-                  title={active.share_token ? 'Shared publicly' : 'Share'}>
-                  <Share2 size={16} />
-                </button>
+                {isLocked ? (
+                  <button className="icon-btn on" onClick={lockNow} aria-label="Lock note now" title="Lock now">
+                    <Lock size={16} />
+                  </button>
+                ) : (
+                  <button className={`icon-btn${active.share_token ? ' on' : ''}`} onClick={() => setShareOpen(true)}
+                    aria-label={active.share_token ? 'Shared publicly. Manage link' : 'Share note'}
+                    title={active.share_token ? 'Shared publicly' : 'Share'}>
+                    <Share2 size={16} />
+                  </button>
+                )}
                 <button className={`icon-btn${isPinned ? ' on' : ''}`} onClick={() => togglePin(active.id)}
                   aria-pressed={isPinned} aria-label={isPinned ? 'Unpin note' : 'Pin note'}
                   title={isPinned ? 'Unpin' : 'Pin to top'}>
                   <Pin size={16} />
                 </button>
-                <Menu label="More actions" items={[
+                <Menu label="More actions" items={isLocked ? [
+                  { label: 'Lock now', icon: <Lock size={15} />, onSelect: lockNow },
+                  { label: 'Remove lock…', icon: <LockOpen size={15} />, onSelect: () => setPinPrompt({ kind: 'remove', id: active.id }) },
+                  { separator: true },
+                  ...exportItems,
+                  { separator: true },
+                  { label: 'Delete…', icon: <Trash2 size={15} />, danger: true, onSelect: () => remove(active.id) },
+                ] : [
                   { label: 'Share…', icon: <Share2 size={15} />, onSelect: () => setShareOpen(true) },
+                  { label: 'Lock with PIN…', icon: <Lock size={15} />, onSelect: () => setPinPrompt({ kind: 'lock', id: active.id }) },
                   ...exportItems,
                   { separator: true },
                   { label: 'Duplicate', icon: <Copy size={15} />, onSelect: () => duplicate(active.id) },
@@ -503,13 +631,35 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
 
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)}
+      <ShareDialog open={shareOpen && !isLocked} onClose={() => setShareOpen(false)}
         note={active && !isScratch ? active : null} onShared={onShared} />
+      <PinDialog open={!!pinPrompt} mode={pinPrompt?.kind === 'lock' ? 'set' : 'verify'}
+        onClose={() => setPinPrompt(null)} onSubmit={submitPin} danger={pinPrompt?.kind === 'delete'}
+        {...PIN_PROMPTS[pinPrompt?.kind ?? 'lock'](notes?.find((n) => n.id === pinPrompt?.id)?.title.trim() || 'Untitled')} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands}
         notes={notes ?? []} textOf={textOf} onOpenNote={(id) => select(id, 'end')} />
     </div>
   );
 }
+
+const PIN_PROMPTS = {
+  lock: () => ({
+    title: 'Lock note',
+    submitLabel: 'Lock note',
+    description: <>Choose a 4-digit PIN. You’ll need it to open or delete this note. If you forget it,
+      the content can only be recovered from your Supabase dashboard.</>,
+  }),
+  remove: () => ({
+    title: 'Remove lock',
+    submitLabel: 'Remove lock',
+    description: 'Enter the PIN to remove the lock. The note will open without a PIN again.',
+  }),
+  delete: (title: string) => ({
+    title: 'Delete locked note',
+    submitLabel: 'Delete note',
+    description: <>Enter the PIN to delete “{title}”. This can’t be undone.</>,
+  }),
+};
 
 function EmptyState({ icon, title, body, leading, children }: {
   icon: React.ReactNode; title: string; body: string; leading: React.ReactNode; children?: React.ReactNode;

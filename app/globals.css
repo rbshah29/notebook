@@ -1168,3 +1168,58 @@ button.callout-btn:hover, button.callout-btn[aria-expanded="true"] { background:
   .tiptap .code-block, .tiptap .callout, .tiptap img, .tiptap tr { break-inside: avoid; }
   .tiptap [data-type="detailsContent"][hidden] { display: block !important; }
 }
+
+/* ==========================================================================
+   Locked notes
+   ========================================================================== */
+.locked-icon { margin-right: 5px; vertical-align: -1px; color: var(--muted); }
+.lock-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 24px 14vh;
+  text-align: center;
+}
+.lock-screen h1 { font-size: 18px; font-weight: 650; color: var(--strong); overflow-wrap: anywhere; }
+.lock-screen > p { color: var(--muted); }
+.lock-screen .pin-field { margin-top: 14px; }
+.lock-screen .lock-error { min-height: 20px; font-size: 13px; color: var(--danger); }
+.lock-screen .lock-error.empty { color: var(--faint); }
+
+.pin-dialog { width: min(400px, calc(100vw - 32px)); }
+.pin-form { display: flex; flex-direction: column; gap: 14px; }
+.pin-desc { color: var(--muted); font-size: 13.5px; }
+.pin-label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 500; }
+
+/* One real input stretched invisibly over four drawn cells. */
+.pin-field { position: relative; width: max-content; }
+.pin-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  border: none;
+  font-size: 16px; /* stops iOS zooming on focus */
+  caret-color: transparent;
+  cursor: text;
+}
+.pin-cells { display: flex; gap: 10px; pointer-events: none; }
+.pin-cell {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 52px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.pin-cell.filled::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--strong); }
+.pin-input:focus + .pin-cells .pin-cell.current,
+.pin-input:focus + .pin-cells .pin-cell:last-child.filled { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pin-input:disabled + .pin-cells { opacity: 0.55; }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:hover:not(:disabled) { background: var(--danger); opacity: 0.88; }
