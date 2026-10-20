@@ -3,17 +3,14 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, u
 import { useEditor, useEditorState, EditorContent, type Editor as TiptapEditor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { NodeSelection } from '@tiptap/pm/state';
-import StarterKit from '@tiptap/starter-kit';
-import { TextAlign } from '@tiptap/extension-text-align';
-import { Highlight } from '@tiptap/extension-highlight';
-import { Placeholder } from '@tiptap/extension-placeholder';
-import { TaskList } from '@tiptap/extension-task-list';
-import { TaskItem } from '@tiptap/extension-task-item';
 import { Bold, Italic, Underline, Strikethrough, Code, Highlighter, Link2 } from 'lucide-react';
 import { updateNote, formatFull, type Note, type NotePatch } from '@/lib/notes';
 import { keys } from '@/lib/shortcuts';
+import { useSettings } from '@/lib/settings';
 import Toolbar, { ToolButton, LinkForm } from './Toolbar';
-import { CodeBlock } from './CodeBlock';
+import { refreshCodeBlocks } from './CodeBlock';
+import { buildExtensions } from './extensions';
+import { useToast } from './ui/Toast';
 
 export type EditorHandle = {
   /** Persists pending changes immediately. Resolves false if the save failed. */
@@ -34,6 +31,8 @@ type Props = {
   onChange: (id: string, patch: NotePatch) => void;
   leading?: React.ReactNode;
   actions?: React.ReactNode;
+  /** Sidebar search terms to highlight in the note. */
+  searchTerms?: string[];
   ref?: React.Ref<EditorHandle>;
 };
 
@@ -118,7 +117,11 @@ function useAutosave(noteId: string, onSaved: (patch: NotePatch) => void) {
   return { status, queue, flush };
 }
 
-export default function Editor({ note, autoFocus, scratch = false, onChange, leading, actions, ref }: Props) {
+const NO_TERMS: string[] = [];
+
+export default function Editor({ note, autoFocus, scratch = false, onChange, leading, actions, searchTerms = NO_TERMS, ref }: Props) {
+  const toast = useToast();
+  const settings = useSettings();
   const [title, setTitle] = useState(note.title);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
@@ -131,22 +134,11 @@ export default function Editor({ note, autoFocus, scratch = false, onChange, lea
   }, [scratch, onChange, note.id, queueSave]);
 
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({ codeBlock: false, link: { openOnClick: false, autolink: true, defaultProtocol: 'https' } }),
-      CodeBlock,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Highlight,
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      Placeholder.configure({
-        placeholder: ({ node }) =>
-          node.type.name === 'heading' ? `Heading ${node.attrs.level}` : 'Start writing…',
-      }),
-    ],
+    extensions: buildExtensions({ editable: true, onError: (message) => toast({ tone: 'error', message }) }),
     content: note.content ?? '',
     immediatelyRender: false,
     editorProps: {
-      attributes: { 'aria-label': 'Note content', class: 'prose' },
+      attributes: { 'aria-label': 'Note content', class: 'prose', spellcheck: String(settings.spellcheck) },
       handleKeyDown: (view, event) => {
         // ArrowUp from the first line jumps back into the title, like one continuous document.
         if (event.key === 'ArrowUp' && view.state.selection.from <= 1 && view.state.selection.empty) {
@@ -188,6 +180,27 @@ export default function Editor({ note, autoFocus, scratch = false, onChange, lea
     el.style.height = '0';
     el.style.height = `${el.scrollHeight}px`;
   }, [title]);
+
+  // Settings that live inside the editor: spellcheck, and code blocks' default line numbers.
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dom.setAttribute('spellcheck', String(settings.spellcheck));
+  }, [editor, settings.spellcheck]);
+  useEffect(() => {
+    if (editor) refreshCodeBlocks(editor);
+  }, [editor, settings.lineNumbers]);
+
+  // Highlight search matches; when a note is opened from a search, scroll to the first one.
+  const scrolledToMatch = useRef(false);
+  useEffect(() => {
+    if (!editor) return;
+    editor.commands.setSearchTerms(searchTerms);
+    if (!searchTerms.length || scrolledToMatch.current) return;
+    scrolledToMatch.current = true;
+    requestAnimationFrame(() => {
+      editor.view.dom.querySelector('.search-match')?.scrollIntoView({ block: 'center' });
+    });
+  }, [editor, searchTerms]);
 
   const focusedOnce = useRef(false);
   useEffect(() => {

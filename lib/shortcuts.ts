@@ -16,10 +16,12 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
   {
     group: 'General',
     items: [
+      ['Command palette', 'Mod+P'],
       ['Search notes', 'Mod+K'],
       ['New note', 'Mod+Alt+N'],
       ['Toggle sidebar', 'Mod+\\'],
       ['Save now', 'Mod+S'],
+      ['Settings', 'Mod+,'],
       ['Keyboard shortcuts', 'Mod+/'],
     ],
   },
@@ -44,6 +46,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Checklist', '[ ]'],
       ['Quote', '>'],
       ['Code block', '```'],
+      ['Insert any block', '/'],
       ['Divider', '---'],
     ],
   },

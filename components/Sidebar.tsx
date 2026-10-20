@@ -2,7 +2,7 @@
 import { memo, useEffect, useState } from 'react';
 import {
   Plus, Search, X, Pin, PinOff, Copy, Trash2, MoreHorizontal, PanelLeftClose, ArrowDownUp,
-  LogOut, Keyboard, Sun, Moon, Monitor, SearchX, NotebookPen,
+  LogOut, Keyboard, Sun, Moon, Monitor, SearchX, NotebookPen, Settings, Globe,
 } from 'lucide-react';
 import Menu from '@/components/ui/Menu';
 import { formatRelative, formatFull, SCRATCH_ID, type Note } from '@/lib/notes';
@@ -35,13 +35,14 @@ type Props = {
   onDelete: (id: string) => void;
   onCollapse: () => void;
   onShowShortcuts: () => void;
+  onShowSettings: () => void;
   onSignOut: () => void;
 };
 
 export default function Sidebar({
   name, loading, totalCount, pinned, others, activeId, scratchHasContent, onOpenScratch, pinnedIds, query, onQueryChange, searchRef,
   sort, onSortChange, textOf, creating, onSelect, onNew, onTogglePin, onDuplicate, onDelete,
-  onCollapse, onShowShortcuts, onSignOut,
+  onCollapse, onShowShortcuts, onShowSettings, onSignOut,
 }: Props) {
   const ordered = [...pinned, ...others];
   const searching = query.trim().length > 0;
@@ -160,7 +161,7 @@ export default function Sidebar({
         )}
       </nav>
 
-      <AccountMenu name={name} onShowShortcuts={onShowShortcuts} onSignOut={onSignOut} />
+      <AccountMenu name={name} onShowShortcuts={onShowShortcuts} onShowSettings={onShowSettings} onSignOut={onSignOut} />
     </aside>
   );
 }
@@ -205,6 +206,7 @@ const NoteRow = memo(function NoteRow({
       <button className="note-row" onClick={() => onSelect(note.id)}
         aria-current={active ? 'page' : undefined}>
         <span className="note-row-title">
+          {note.share_token && <Globe size={12} className="shared-icon" aria-label="Shared publicly" />}
           <Highlight text={note.title.trim() || 'Untitled'} query={query} />
         </span>
         <span className="note-row-sub">
@@ -262,8 +264,8 @@ function ListSkeleton() {
   );
 }
 
-function AccountMenu({ name, onShowShortcuts, onSignOut }: {
-  name: string; onShowShortcuts: () => void; onSignOut: () => void;
+function AccountMenu({ name, onShowShortcuts, onShowSettings, onSignOut }: {
+  name: string; onShowShortcuts: () => void; onShowSettings: () => void; onSignOut: () => void;
 }) {
   const [theme, setTheme] = useState<ThemePreference>(readTheme);
   const choose = (t: ThemePreference) => { setTheme(t); applyTheme(t); };
@@ -277,6 +279,7 @@ function AccountMenu({ name, onShowShortcuts, onSignOut }: {
           { label: 'Light', icon: <Sun size={15} />, checked: theme === 'light', onSelect: () => choose('light') },
           { label: 'Dark', icon: <Moon size={15} />, checked: theme === 'dark', onSelect: () => choose('dark') },
           { separator: true },
+          { label: 'Settings', icon: <Settings size={15} />, hint: keys('Mod+,'), onSelect: onShowSettings },
           { label: 'Keyboard shortcuts', icon: <Keyboard size={15} />, hint: keys('Mod+/'), onSelect: onShowShortcuts },
           { label: 'Sign out', icon: <LogOut size={15} />, onSelect: onSignOut },
         ]}>

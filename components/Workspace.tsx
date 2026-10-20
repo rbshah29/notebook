@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, FileText, PanelLeftOpen, ChevronLeft, Pin, MoreHorizontal, Copy, Trash2, CloudOff,
-  RotateCw, Save, Eraser,
+  RotateCw, Save, Eraser, Share2, FileDown, ClipboardCopy, Printer, Settings as SettingsIcon, Keyboard,
+  PanelLeft, Sun, Moon, LogOut, NotebookPen, Search, PinOff,
 } from 'lucide-react';
 import { getSupabase } from '@/lib/supabase';
 import {
@@ -13,6 +14,12 @@ import { isMod, keys } from '@/lib/shortcuts';
 import Editor, { type EditorHandle } from '@/components/Editor';
 import Sidebar, { type SortKey } from '@/components/Sidebar';
 import ShortcutsDialog from '@/components/ShortcutsDialog';
+import SettingsDialog from '@/components/SettingsDialog';
+import ShareDialog from '@/components/ShareDialog';
+import CommandPalette, { type Command } from '@/components/CommandPalette';
+import { useSettings, settingsStyle } from '@/lib/settings';
+import { toMarkdown, downloadFile, fileName } from '@/lib/markdown';
+import { applyTheme } from '@/lib/theme';
 import Menu from '@/components/ui/Menu';
 import { useToast } from '@/components/ui/Toast';
 
@@ -48,6 +55,10 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const settings = useSettings();
   const [scratch, setScratch] = useState<Note>(emptyScratch);
   // Bumped on "Clear" so the scratch editor remounts with empty content.
   const [scratchVersion, setScratchVersion] = useState(0);
@@ -100,6 +111,8 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
       others: sorted.filter((n) => !pinnedIds.has(n.id)),
     };
   }, [notes, query, sort, pinnedIds]);
+
+  const searchTerms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
 
   const isScratch = activeId === SCRATCH_ID;
   const active = isScratch ? scratch : notes?.find((n) => n.id === activeId) ?? null;
@@ -211,6 +224,44 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
     });
   }, [currentNote, setPinnedList, commitDelete, select, toast]);
 
+  const onShared = useCallback((id: string, token: string | null) => {
+    setNotes((all) => all?.map((n) => (n.id === id ? { ...n, share_token: token } : n)) ?? all);
+    if (token) {
+      navigator.clipboard.writeText(`${window.location.origin}/share#${token}`).then(
+        () => toast({ tone: 'success', message: 'Link created and copied' }), () => {});
+    } else toast({ message: 'Sharing turned off. The old link no longer works.' });
+  }, [toast]);
+
+  /** The open note (or scratchpad) including edits that haven't saved yet. */
+  const openNoteSnapshot = useCallback((): Pick<Note, 'title' | 'content'> | null => {
+    const { activeId: id } = latest.current;
+    if (!id || !editorRef.current) return null;
+    return editorRef.current.snapshot();
+  }, []);
+
+  const copyMarkdown = useCallback(() => {
+    const note = openNoteSnapshot();
+    if (!note) return;
+    navigator.clipboard.writeText(toMarkdown(note.title, note.content)).then(
+      () => toast({ tone: 'success', message: 'Copied as Markdown' }),
+      () => toast({ tone: 'error', message: 'Couldn’t access the clipboard' }));
+  }, [openNoteSnapshot, toast]);
+
+  const downloadMarkdown = useCallback(() => {
+    const note = openNoteSnapshot();
+    if (note) downloadFile(fileName(note.title, 'md'), toMarkdown(note.title, note.content));
+  }, [openNoteSnapshot]);
+
+  /** Uses the browser's print dialog, where "Save as PDF" is a destination. */
+  const exportPdf = useCallback(() => {
+    const note = openNoteSnapshot();
+    if (!note) return;
+    const previous = document.title;
+    document.title = note.title.trim() || 'Untitled'; // becomes the suggested PDF file name
+    window.addEventListener('afterprint', () => { document.title = previous; }, { once: true });
+    window.print();
+  }, [openNoteSnapshot]);
+
   const clearScratch = useCallback(() => {
     setScratch(emptyScratch());
     setScratchVersion((v) => v + 1);
@@ -284,13 +335,44 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
       else if (e.code === 'Backslash') { e.preventDefault(); setCollapsed((c) => !c); }
       else if (e.code === 'KeyS' && !e.shiftKey) { e.preventDefault(); saveNow(); }
       else if (e.code === 'Slash') { e.preventDefault(); setShortcutsOpen((o) => !o); }
+      else if (e.code === 'KeyP' && !e.shiftKey && !e.altKey) { e.preventDefault(); setPaletteOpen((o) => !o); }
+      else if (e.code === 'Comma') { e.preventDefault(); setSettingsOpen((o) => !o); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [focusSearch, newNote, setCollapsed, saveNow]);
 
-  const loading = notes === null && !loadError;
   const isPinned = active ? pinnedIds.has(active.id) : false;
+  // Unavailable actions are `false`; the palette skips them.
+  const commands = useMemo((): (Command | false)[] => {
+    const note = active && !isScratch ? active : null;
+    return [
+      { id: 'new', label: 'New note', icon: <Plus size={15} />, hint: keys('Mod+Alt+N'), keywords: 'create add', run: newNote },
+      { id: 'search', label: 'Search notes', icon: <Search size={15} />, hint: keys('Mod+K'), keywords: 'find', run: focusSearch },
+      { id: 'scratch', label: 'Open scratchpad', icon: <NotebookPen size={15} />, keywords: 'temporary draft', run: () => select(SCRATCH_ID, 'end') },
+      !!note && { id: 'share', label: 'Share note…', icon: <Share2 size={15} />, keywords: 'public link publish', run: () => setShareOpen(true) },
+      !!note && { id: 'pin', label: isPinned ? 'Unpin note' : 'Pin note', icon: isPinned ? <PinOff size={15} /> : <Pin size={15} />, run: () => togglePin(note.id) },
+      !!note && { id: 'duplicate', label: 'Duplicate note', icon: <Copy size={15} />, keywords: 'copy', run: () => duplicate(note.id) },
+      !!active && { id: 'copy-md', label: 'Copy as Markdown', icon: <ClipboardCopy size={15} />, keywords: 'export clipboard', run: copyMarkdown },
+      !!active && { id: 'download-md', label: 'Download as Markdown', icon: <FileDown size={15} />, keywords: 'export save md file', run: downloadMarkdown },
+      !!active && { id: 'pdf', label: 'Export as PDF', icon: <Printer size={15} />, keywords: 'print save', run: exportPdf },
+      !!note && { id: 'delete', label: 'Delete note', icon: <Trash2 size={15} />, keywords: 'remove trash', run: () => remove(note.id) },
+      { id: 'sidebar', label: 'Toggle sidebar', icon: <PanelLeft size={15} />, hint: keys('Mod+\\'), run: () => setCollapsed((c) => !c) },
+      { id: 'light', label: 'Switch to light theme', icon: <Sun size={15} />, keywords: 'appearance mode', run: () => applyTheme('light') },
+      { id: 'dark', label: 'Switch to dark theme', icon: <Moon size={15} />, keywords: 'appearance mode', run: () => applyTheme('dark') },
+      { id: 'settings', label: 'Settings', icon: <SettingsIcon size={15} />, hint: keys('Mod+,'), keywords: 'preferences font width code theme tab', run: () => setSettingsOpen(true) },
+      { id: 'shortcuts', label: 'Keyboard shortcuts', icon: <Keyboard size={15} />, hint: keys('Mod+/'), keywords: 'keys help', run: () => setShortcutsOpen(true) },
+      { id: 'signout', label: 'Sign out', icon: <LogOut size={15} />, keywords: 'log out', run: signOut },
+    ];
+  }, [active, isScratch, isPinned, newNote, focusSearch, select, togglePin, duplicate, remove, copyMarkdown, downloadMarkdown, exportPdf, setCollapsed, signOut]);
+
+  const exportItems = [
+    { label: 'Copy as Markdown', icon: <ClipboardCopy size={15} />, onSelect: copyMarkdown },
+    { label: 'Download as Markdown', icon: <FileDown size={15} />, onSelect: downloadMarkdown },
+    { label: 'Export as PDF', icon: <Printer size={15} />, onSelect: exportPdf },
+  ];
+
+  const loading = notes === null && !loadError;
   const scratchHasContent = !!scratch.title.trim() || !!textOf(scratch);
 
   const leading = (
@@ -308,7 +390,8 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
   );
 
   return (
-    <div className={`app${collapsed ? ' sidebar-collapsed' : ''}`} data-view={mobileView}>
+    <div className={`app${collapsed ? ' sidebar-collapsed' : ''}`} data-view={mobileView}
+      data-code-theme={settings.codeTheme} style={settingsStyle(settings)}>
       <Sidebar
         name={name}
         loading={loading}
@@ -333,6 +416,7 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
         onDelete={remove}
         onCollapse={() => setCollapsed(true)}
         onShowShortcuts={() => setShortcutsOpen(true)}
+        onShowSettings={() => setSettingsOpen(true)}
         onSignOut={signOut}
       />
 
@@ -359,6 +443,7 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
             scratch={isScratch}
             autoFocus={focusRequest?.id === active.id ? focusRequest.target : undefined}
             onChange={onNoteChange}
+            searchTerms={searchTerms}
             leading={leading}
             actions={isScratch ? (
               <>
@@ -367,6 +452,8 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
                   <Save size={14} /> <span className="hide-narrow">Save as note</span>
                 </button>
                 <Menu label="More actions" items={[
+                  ...exportItems,
+                  { separator: true },
                   { label: 'Clear scratchpad', icon: <Eraser size={15} />, danger: true, onSelect: clearScratch },
                 ]}>
                   <MoreHorizontal size={16} />
@@ -374,12 +461,20 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
               </>
             ) : (
               <>
+                <button className={`icon-btn${active.share_token ? ' on' : ''}`} onClick={() => setShareOpen(true)}
+                  aria-label={active.share_token ? 'Shared publicly. Manage link' : 'Share note'}
+                  title={active.share_token ? 'Shared publicly' : 'Share'}>
+                  <Share2 size={16} />
+                </button>
                 <button className={`icon-btn${isPinned ? ' on' : ''}`} onClick={() => togglePin(active.id)}
                   aria-pressed={isPinned} aria-label={isPinned ? 'Unpin note' : 'Pin note'}
                   title={isPinned ? 'Unpin' : 'Pin to top'}>
                   <Pin size={16} />
                 </button>
                 <Menu label="More actions" items={[
+                  { label: 'Share…', icon: <Share2 size={15} />, onSelect: () => setShareOpen(true) },
+                  ...exportItems,
+                  { separator: true },
                   { label: 'Duplicate', icon: <Copy size={15} />, onSelect: () => duplicate(active.id) },
                   { separator: true },
                   { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onSelect: () => remove(active.id) },
@@ -400,13 +495,18 @@ export default function Workspace({ userId, name }: { userId: string; name: stri
               <Plus size={15} /> New note
             </button>
             <p className="empty-hint">
-              <kbd>{keys('Mod+Alt+N')}</kbd> new note · <kbd>{keys('Mod+K')}</kbd> search · <kbd>{keys('Mod+/')}</kbd> shortcuts
+              <kbd>{keys('Mod+Alt+N')}</kbd> new note · <kbd>{keys('Mod+P')}</kbd> commands · <kbd>{keys('Mod+/')}</kbd> shortcuts
             </p>
           </EmptyState>
         )}
       </main>
 
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)}
+        note={active && !isScratch ? active : null} onShared={onShared} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands}
+        notes={notes ?? []} textOf={textOf} onOpenNote={(id) => select(id, 'end')} />
     </div>
   );
 }

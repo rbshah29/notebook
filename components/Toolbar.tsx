@@ -4,10 +4,12 @@ import { useEditorState, type Editor } from '@tiptap/react';
 import {
   Bold, Italic, Underline, Link2, List, ListOrdered, ListChecks, Quote, SquareCode, Minus,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, Undo2, Redo2, ChevronDown, Check, Unlink,
-  ExternalLink,
+  ExternalLink, Plus, Table, Image as ImageIcon, ChevronRight, Trash2, Rows3, Columns3,
 } from 'lucide-react';
-import Menu from '@/components/ui/Menu';
+import Menu, { type MenuItem } from '@/components/ui/Menu';
 import { keys } from '@/lib/shortcuts';
+import { CALLOUTS, type CalloutVariant } from './Callout';
+import { pickImages } from './ImageUpload';
 
 export function ToolButton({ label, shortcut, active, disabled, onClick, children }: {
   label: string;
@@ -60,6 +62,7 @@ export default function Toolbar({ editor }: { editor: Editor }) {
       taskList: e.isActive('taskList'),
       blockquote: e.isActive('blockquote'),
       codeBlock: e.isActive('codeBlock'),
+      table: e.isActive('table'),
       align: ALIGNS.find((a) => e.isActive({ textAlign: a.value }))?.value ?? 'left',
       canUndo: e.can().undo(),
       canRedo: e.can().redo(),
@@ -95,7 +98,21 @@ export default function Toolbar({ editor }: { editor: Editor }) {
       <ToolButton label="Checklist" shortcut={keys('Mod+Shift+9')} active={s.taskList} onClick={() => c().toggleTaskList().run()}><ListChecks size={z} /></ToolButton>
       <ToolButton label="Quote" shortcut={keys('Mod+Shift+B')} active={s.blockquote} onClick={() => c().toggleBlockquote().run()}><Quote size={z} /></ToolButton>
       <ToolButton label="Code block" shortcut={keys('Mod+`')} active={s.codeBlock} onClick={() => c().toggleCodeBlock().run()}><SquareCode size={z} /></ToolButton>
-      <ToolButton label="Divider" onClick={() => c().setHorizontalRule().run()}><Minus size={z} /></ToolButton>
+      <Menu label="Insert" triggerClassName="tb-btn" align="start" title="Insert"
+        items={[
+          { label: 'Table', icon: <Table size={15} />, onSelect: () => c().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+          { label: 'Image', icon: <ImageIcon size={15} />, onSelect: () => pickImages(editor) },
+          { label: 'Toggle section', icon: <ChevronRight size={15} />, onSelect: () => c().setDetails().run() },
+          { label: 'Divider', icon: <Minus size={15} />, onSelect: () => c().setHorizontalRule().run() },
+          { heading: 'Callout' },
+          ...(Object.keys(CALLOUTS) as CalloutVariant[]).map((v): MenuItem => {
+            const Icon = CALLOUTS[v].icon;
+            return { label: CALLOUTS[v].label, icon: <Icon size={15} />, onSelect: () => c().toggleCallout(v).run() };
+          }),
+        ]}>
+        <Plus size={z} />
+      </Menu>
+      {s.table && <TableMenu editor={editor} />}
       <Menu label="Alignment" triggerClassName="tb-btn" align="start"
         items={ALIGNS.map((a) => ({
           label: a.label,
@@ -109,6 +126,29 @@ export default function Toolbar({ editor }: { editor: Editor }) {
       <ToolButton label="Undo" shortcut={keys('Mod+Z')} disabled={!s.canUndo} onClick={() => c().undo().run()}><Undo2 size={z} /></ToolButton>
       <ToolButton label="Redo" shortcut={keys('Mod+Shift+Z')} disabled={!s.canRedo} onClick={() => c().redo().run()}><Redo2 size={z} /></ToolButton>
     </div>
+  );
+}
+
+function TableMenu({ editor }: { editor: Editor }) {
+  const c = () => editor.chain().focus();
+  return (
+    <Menu label="Table" triggerClassName="tb-select" align="start"
+      items={[
+        { heading: 'Rows' },
+        { label: 'Insert row above', icon: <Rows3 size={15} />, onSelect: () => c().addRowBefore().run() },
+        { label: 'Insert row below', icon: <Rows3 size={15} />, onSelect: () => c().addRowAfter().run() },
+        { label: 'Delete row', icon: <Trash2 size={15} />, onSelect: () => c().deleteRow().run() },
+        { heading: 'Columns' },
+        { label: 'Insert column left', icon: <Columns3 size={15} />, onSelect: () => c().addColumnBefore().run() },
+        { label: 'Insert column right', icon: <Columns3 size={15} />, onSelect: () => c().addColumnAfter().run() },
+        { label: 'Delete column', icon: <Trash2 size={15} />, onSelect: () => c().deleteColumn().run() },
+        { separator: true },
+        { label: 'Toggle header row', onSelect: () => c().toggleHeaderRow().run() },
+        { label: 'Merge or split cells', onSelect: () => c().mergeOrSplit().run() },
+        { label: 'Delete table', icon: <Trash2 size={15} />, danger: true, onSelect: () => c().deleteTable().run() },
+      ]}>
+      <Table size={15} /> Table <ChevronDown size={14} />
+    </Menu>
   );
 }
 

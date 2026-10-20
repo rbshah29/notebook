@@ -6,6 +6,8 @@ export type Note = {
   title: string;
   content: JSONContent | string | null;
   updated_at: string;
+  /** Set while the note is shared publicly; anyone with the link can read it. */
+  share_token?: string | null;
 };
 
 export type NotePatch = Partial<Pick<Note, 'title' | 'content' | 'updated_at'>>;
@@ -13,11 +15,23 @@ export type NotePatch = Partial<Pick<Note, 'title' | 'content' | 'updated_at'>>;
 /** Id of the in-memory scratchpad. It is never written to Supabase and is gone on refresh. */
 export const SCRATCH_ID = 'scratchpad';
 
-const COLUMNS = 'id, title, content, updated_at';
+const BASE_COLUMNS = 'id, title, content, updated_at';
+let COLUMNS = `${BASE_COLUMNS}, share_token`;
+
+/** False until supabase/sharing-and-images.sql has been run (the share_token column is missing). */
+export let sharingAvailable = true;
 
 export async function fetchNotes() {
-  return getSupabase().from('documents').select(COLUMNS).order('updated_at', { ascending: false })
+  const query = () => getSupabase().from('documents').select(COLUMNS).order('updated_at', { ascending: false })
     .overrideTypes<Note[], { merge: false }>();
+  const result = await query();
+  // 42703 = undefined column: the sharing migration hasn't been run. Keep the app working without it.
+  if (result.error?.code === '42703' && sharingAvailable) {
+    sharingAvailable = false;
+    COLUMNS = BASE_COLUMNS;
+    return query();
+  }
+  return result;
 }
 
 export async function createNote(fields: Pick<Note, 'title' | 'content'> = { title: '', content: null }) {
@@ -33,7 +47,22 @@ export async function deleteNote(id: string) {
   return getSupabase().from('documents').delete().eq('id', id);
 }
 
-const TEXT_BLOCKS = new Set(['paragraph', 'heading', 'codeBlock']);
+/** Turns public sharing on (a fresh random token) or off (null). */
+export async function setShareToken(id: string, token: string | null) {
+  return getSupabase().from('documents').update({ share_token: token }).eq('id', id);
+}
+
+export type SharedNote = Pick<Note, 'title' | 'content' | 'updated_at'>;
+
+/** Reads a shared note by its token. Works signed out; returns null data for unknown tokens. */
+export async function fetchSharedNote(token: string) {
+  const { data, error } = await getSupabase().rpc('get_shared_note', { token });
+  return { data: data as SharedNote | null, error };
+}
+
+export const shareUrl = (token: string) => `${window.location.origin}/share#${token}`;
+
+const TEXT_BLOCKS = new Set(['paragraph', 'heading', 'codeBlock', 'detailsSummary']);
 
 /** Flattens Tiptap JSON into plain text, separating blocks with newlines. */
 export function toPlainText(content: Note['content']): string {

@@ -1,4 +1,5 @@
 import { common, createLowlight } from 'lowlight';
+import { getSettings } from '@/lib/settings';
 
 /** Shared highlighter: highlight.js's ~35 most common languages. */
 export const lowlight = createLowlight(common);
@@ -53,7 +54,8 @@ export function resolveLanguage(id: string | null | undefined): string | null {
   return lowlight.registered(name) ? name : null;
 }
 
-export const INDENT = '    ';
+/** One level of indentation, from the tab-size setting. */
+export const indentUnit = () => ' '.repeat(getSettings().tabSize);
 
 /**
  * Removes the indentation every line shares, so code copied from deep inside a file starts at
@@ -61,7 +63,8 @@ export const INDENT = '    ';
  * after it), so when that happens the first line is ignored when measuring.
  */
 export function dedent(text: string): string {
-  const lines = text.replace(/\r\n?/g, '\n').replace(/\t/g, INDENT).split('\n');
+  const unit = indentUnit();
+  const lines = text.replace(/\r\n?/g, '\n').replace(/\t/g, unit).split('\n');
   while (lines.length && !lines[0].trim()) lines.shift();
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   if (!lines.length) return '';
@@ -79,7 +82,7 @@ export function dedent(text: string): string {
     // "if (x) {" copied without its indent: keep its body one level in.
     const opens = /[{([:]\s*$/.test(lines[0]);
     const closes = lines.slice(1).some((l) => l.trim() && width(l) === rest && /^\s*[})\]]/.test(l));
-    const keep = opens && !closes ? INDENT.length : 0;
+    const keep = opens && !closes ? unit.length : 0;
     return [lines[0], ...lines.slice(1).map((l) => strip(l, rest - keep))].join('\n');
   }
   return lines.map((l) => strip(l, all)).join('\n');
@@ -104,3 +107,14 @@ export function detectCode(text: string): { language: string | null } | null {
   const language = (guess.data as { language?: string } | undefined)?.language;
   return { language: relevance >= 10 ? resolveLanguage(language) : null };
 }
+
+/** Pretty-prints code in languages we can format reliably. Null when the code doesn't parse. */
+export function formatCode(language: string, text: string, tabSize: number): string | null {
+  if (language !== 'json') return null;
+  try {
+    return JSON.stringify(JSON.parse(text), null, tabSize);
+  } catch {
+    return null;
+  }
+}
+formatCode.supports = (language: string) => language === 'json';
