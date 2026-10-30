@@ -16,7 +16,7 @@ export type Settings = {
 
 export const DEFAULT_SETTINGS: Settings = {
   fontSize: 'medium',
-  width: 'normal',
+  width: 'full',
   codeTheme: 'vscode',
   tabSize: 4,
   lineNumbers: false,

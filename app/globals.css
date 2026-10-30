@@ -642,7 +642,7 @@ kbd {
 }
 .note-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 28px; font-size: 13px; color: var(--faint); }
 
-.note-loading { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 760px; margin: calc(var(--bar-h) + 56px) auto 0; padding: 0 56px; }
+.note-loading { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: var(--editor-width, 760px); margin: calc(var(--bar-h) + 56px) auto 0; padding: 0 56px; }
 .note-loading .skeleton.lg { margin-bottom: 18px; }
 
 .empty {
