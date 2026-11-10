@@ -692,6 +692,8 @@ kbd {
   outline: none;
   background: transparent;
 }
+.ai-form input { width: 290px; }
+.ai-form-icon { margin-left: 8px; flex-shrink: 0; color: var(--accent); }
 
 /* ==========================================================================
    Note content
@@ -1082,6 +1084,18 @@ button.callout-btn:hover, button.callout-btn[aria-expanded="true"] { background:
 .setting > span:first-child { display: flex; flex-direction: column; }
 .setting-label { color: var(--text); }
 .setting-hint { font-size: 12px; color: var(--faint); }
+.setting-input {
+  width: 220px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--input);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 120ms, background-color 120ms;
+}
+.setting-input:focus { border-color: var(--accent); background: var(--surface); }
 .segmented { display: inline-flex; padding: 2px; border-radius: var(--radius); background: var(--input); }
 .segmented button { height: 28px; padding: 0 10px; border-radius: var(--radius-sm); font-size: 13px; color: var(--muted); white-space: nowrap; }
 .segmented button:hover { color: var(--strong); }

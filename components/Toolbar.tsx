@@ -5,8 +5,10 @@ import {
   Bold, Italic, Underline, Link2, List, ListOrdered, ListChecks, Quote, SquareCode, Minus,
   AlignLeft, AlignCenter, AlignRight, AlignJustify, Undo2, Redo2, ChevronDown, Check, Unlink,
   ExternalLink, Plus, Table, Image as ImageIcon, ChevronRight, Trash2, Rows3, Columns3,
+  Sparkles, Wand2, FileText, SpellCheck, Minimize2, Maximize2, Loader2, ArrowUp,
 } from 'lucide-react';
 import Menu, { type MenuItem } from '@/components/ui/Menu';
+import { runEditorAi, useAiAllowed, type AiStatusDetail } from '@/lib/gemini';
 import { keys } from '@/lib/shortcuts';
 import { CALLOUTS, type CalloutVariant } from './Callout';
 import { pickImages } from './ImageUpload';
@@ -46,6 +48,7 @@ const ALIGNS = [
 ] as const;
 
 export default function Toolbar({ editor }: { editor: Editor }) {
+  const aiAllowed = useAiAllowed();
   // Subscribes to just the bits the toolbar shows, so typing doesn't re-render the whole editor.
   const s = useEditorState({
     editor,
@@ -122,10 +125,142 @@ export default function Toolbar({ editor }: { editor: Editor }) {
         }))}>
         <AlignIcon size={z} />
       </Menu>
+      {aiAllowed && (
+        <>
+          <span className="tb-sep" />
+          <AiButton editor={editor} />
+        </>
+      )}
       <span className="tb-sep" />
       <ToolButton label="Undo" shortcut={keys('Mod+Z')} disabled={!s.canUndo} onClick={() => c().undo().run()}><Undo2 size={z} /></ToolButton>
       <ToolButton label="Redo" shortcut={keys('Mod+Shift+Z')} disabled={!s.canRedo} onClick={() => c().redo().run()}><Redo2 size={z} /></ToolButton>
     </div>
+  );
+}
+
+function AiButton({ editor }: { editor: Editor }) {
+  const [mode, setMode] = useState<'closed' | 'menu' | 'prompt'>('closed');
+  const [busy, setBusy] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const dom = editor.view.dom;
+    const onPrompt = () => setMode('prompt');
+    const onStatus = (e: Event) => {
+      const detail = (e as CustomEvent<AiStatusDetail>).detail;
+      setBusy(!!detail?.busy);
+    };
+    dom.addEventListener('notebook:ai-prompt', onPrompt);
+    dom.addEventListener('notebook:ai-status', onStatus);
+    return () => {
+      dom.removeEventListener('notebook:ai-prompt', onPrompt);
+      dom.removeEventListener('notebook:ai-status', onStatus);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (mode === 'closed') return;
+    const onPointer = (e: PointerEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setMode('closed');
+    };
+    document.addEventListener('pointerdown', onPointer);
+    return () => document.removeEventListener('pointerdown', onPointer);
+  }, [mode]);
+
+  return (
+    <div className="menu-wrap" ref={wrapRef}>
+      <ToolButton
+        label={busy ? 'Gemini is thinking…' : 'Gemini AI'}
+        active={mode !== 'closed' || busy}
+        disabled={busy}
+        onClick={() => setMode((m) => (m === 'closed' ? 'menu' : 'closed'))}>
+        {busy ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+      </ToolButton>
+      {mode === 'menu' && (
+        <div className="menu menu-start menu-bottom" role="menu" aria-label="Gemini AI">
+          <div className="menu-heading">Gemini AI</div>
+          <button type="button" className="menu-item" role="menuitem"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setMode('prompt')}>
+            <span className="menu-icon"><Sparkles size={15} /></span>
+            <span className="menu-label">Ask Gemini…</span>
+          </button>
+          <button type="button" className="menu-item" role="menuitem"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { setMode('closed'); void runEditorAi(editor, 'continue'); }}>
+            <span className="menu-icon"><Wand2 size={15} /></span>
+            <span className="menu-label">Continue writing</span>
+          </button>
+          <button type="button" className="menu-item" role="menuitem"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { setMode('closed'); void runEditorAi(editor, 'summarize'); }}>
+            <span className="menu-icon"><FileText size={15} /></span>
+            <span className="menu-label">Summarize note</span>
+          </button>
+          <div className="menu-sep" />
+          <div className="menu-heading">Edit selection or note</div>
+          <button type="button" className="menu-item" role="menuitem"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { setMode('closed'); void runEditorAi(editor, 'improve'); }}>
+            <span className="menu-icon"><Sparkles size={15} /></span>
+            <span className="menu-label">Improve writing</span>
+          </button>
+          <button type="button" className="menu-item" role="menuitem"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { setMode('closed'); void runEditorAi(editor, 'fix'); }}>
+            <span className="menu-icon"><SpellCheck size={15} /></span>
+            <span className="menu-label">Fix spelling & grammar</span>
+          </button>
+          <button type="button" className="menu-item" role="menuitem"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { setMode('closed'); void runEditorAi(editor, 'shorter'); }}>
+            <span className="menu-icon"><Minimize2 size={15} /></span>
+            <span className="menu-label">Make shorter</span>
+          </button>
+          <button type="button" className="menu-item" role="menuitem"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { setMode('closed'); void runEditorAi(editor, 'longer'); }}>
+            <span className="menu-icon"><Maximize2 size={15} /></span>
+            <span className="menu-label">Make longer</span>
+          </button>
+        </div>
+      )}
+      {mode === 'prompt' && (
+        <div className="popover menu-start menu-bottom">
+          <AiPromptForm editor={editor} onDone={() => setMode('closed')} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Inline Gemini prompt input used by both the toolbar popover and the selection bubble. */
+export function AiPromptForm({ editor, onDone }: { editor: Editor; onDone: () => void }) {
+  const [prompt, setPrompt] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const q = prompt.trim();
+    if (!q) return;
+    onDone();
+    void runEditorAi(editor, 'ask', q);
+  }
+
+  return (
+    <form className="link-form ai-form" onSubmit={submit}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') { e.preventDefault(); onDone(); editor.commands.focus(); }
+      }}>
+      <Sparkles size={14} className="ai-form-icon" aria-hidden />
+      <input ref={inputRef} value={prompt} onChange={(e) => setPrompt(e.target.value)}
+        placeholder="Ask Gemini to write, explain, or edit…" aria-label="Ask Gemini" />
+      <button type="submit" className="tb-btn" disabled={!prompt.trim()} aria-label="Send to Gemini" title="Send  ↵">
+        <ArrowUp size={15} />
+      </button>
+    </form>
   );
 }
 

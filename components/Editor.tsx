@@ -3,11 +3,12 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, u
 import { useEditor, useEditorState, EditorContent, type Editor as TiptapEditor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { NodeSelection } from '@tiptap/pm/state';
-import { Bold, Italic, Underline, Strikethrough, Code, Highlighter, Link2 } from 'lucide-react';
+import { Bold, Italic, Underline, Strikethrough, Code, Highlighter, Link2, Sparkles } from 'lucide-react';
+import { useAiAllowed, type AiStatusDetail } from '@/lib/gemini';
 import { updateNote, formatFull, type Note, type NotePatch } from '@/lib/notes';
 import { keys } from '@/lib/shortcuts';
 import { useSettings } from '@/lib/settings';
-import Toolbar, { ToolButton, LinkForm } from './Toolbar';
+import Toolbar, { ToolButton, LinkForm, AiPromptForm } from './Toolbar';
 import { refreshCodeBlocks } from './CodeBlock';
 import { buildExtensions } from './extensions';
 import { useToast } from './ui/Toast';
@@ -133,6 +134,7 @@ export default function Editor({ note, autoFocus, scratch = false, onChange, lea
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const [editingLink, setEditingLink] = useState(false);
+  const [editingAi, setEditingAi] = useState(false);
 
   const { status, flush, queue: queueSave } = useAutosave(note.id, (patch) => onChange(note.id, patch), save);
   const queue = useCallback((patch: NotePatch) => {
@@ -196,6 +198,17 @@ export default function Editor({ note, autoFocus, scratch = false, onChange, lea
   useEffect(() => {
     if (editor) refreshCodeBlocks(editor);
   }, [editor, settings.lineNumbers]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const onStatus = (e: Event) => {
+      const detail = (e as CustomEvent<AiStatusDetail>).detail;
+      if (detail?.error) toast({ tone: 'error', message: detail.error });
+    };
+    dom.addEventListener('notebook:ai-status', onStatus);
+    return () => dom.removeEventListener('notebook:ai-status', onStatus);
+  }, [editor, toast]);
 
   // Highlight search matches; when a note is opened from a search, scroll to the first one.
   const scrolledToMatch = useRef(false);
@@ -266,15 +279,19 @@ export default function Editor({ note, autoFocus, scratch = false, onChange, lea
 
       {editor && scrollEl && (
         <BubbleMenu editor={editor}
-          options={{ placement: 'top', offset: 8, scrollTarget: scrollEl, onHide: () => setEditingLink(false) }}
+          options={{ placement: 'top', offset: 8, scrollTarget: scrollEl, onHide: () => { setEditingLink(false); setEditingAi(false); } }}
           shouldShow={({ editor: e, state, from, to, element }) => {
             const hasFocus = e.view.hasFocus() || element.contains(document.activeElement);
             return hasFocus && from !== to && !e.isActive('codeBlock') && !(state.selection instanceof NodeSelection);
           }}>
           <div className="bubble">
-            {editingLink
-              ? <LinkForm editor={editor} onDone={() => setEditingLink(false)} />
-              : <BubbleMarks editor={editor} onLink={() => setEditingLink(true)} />}
+            {editingLink ? (
+              <LinkForm editor={editor} onDone={() => setEditingLink(false)} />
+            ) : editingAi ? (
+              <AiPromptForm editor={editor} onDone={() => setEditingAi(false)} />
+            ) : (
+              <BubbleMarks editor={editor} onLink={() => setEditingLink(true)} onAi={() => setEditingAi(true)} />
+            )}
           </div>
         </BubbleMenu>
       )}
@@ -282,7 +299,8 @@ export default function Editor({ note, autoFocus, scratch = false, onChange, lea
   );
 }
 
-function BubbleMarks({ editor, onLink }: { editor: TiptapEditor; onLink: () => void }) {
+function BubbleMarks({ editor, onLink, onAi }: { editor: TiptapEditor; onLink: () => void; onAi: () => void }) {
+  const aiAllowed = useAiAllowed();
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -294,6 +312,12 @@ function BubbleMarks({ editor, onLink }: { editor: TiptapEditor; onLink: () => v
   const c = () => editor.chain().focus();
   return (
     <>
+      {aiAllowed && (
+        <>
+          <ToolButton label="Ask Gemini" onClick={onAi}><Sparkles size={15} /></ToolButton>
+          <span className="tb-sep" />
+        </>
+      )}
       <ToolButton label="Bold" shortcut={keys('Mod+B')} active={s.bold} onClick={() => c().toggleBold().run()}><Bold size={15} /></ToolButton>
       <ToolButton label="Italic" shortcut={keys('Mod+I')} active={s.italic} onClick={() => c().toggleItalic().run()}><Italic size={15} /></ToolButton>
       <ToolButton label="Underline" shortcut={keys('Mod+U')} active={s.underline} onClick={() => c().toggleUnderline().run()}><Underline size={15} /></ToolButton>

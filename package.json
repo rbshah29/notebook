@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@floating-ui/dom": "^1.8.0",
+    "@google/genai": "^3.0.0",
     "@supabase/supabase-js": "^2.109.0",
     "@tiptap/extension-code-block-lowlight": "^3.32.0",
     "@tiptap/extension-details": "^3.32.0",

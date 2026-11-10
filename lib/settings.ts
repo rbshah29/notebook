@@ -2,6 +2,7 @@
 import { useSyncExternalStore } from 'react';
 
 export type CodeTheme = 'vscode' | 'github' | 'one-dark' | 'monokai';
+export type GeminiModel = 'gemini-3.8-flash' | 'gemini-flash-latest' | 'gemini-4-argon';
 
 /** Per-device editor preferences. Note data never lives here. */
 export type Settings = {
@@ -12,6 +13,8 @@ export type Settings = {
   lineNumbers: boolean;
   wordWrap: boolean;
   spellcheck: boolean;
+  geminiModel: GeminiModel;
+  geminiApiKey: string;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -22,16 +25,25 @@ export const DEFAULT_SETTINGS: Settings = {
   lineNumbers: false,
   wordWrap: false,
   spellcheck: true,
+  geminiModel: 'gemini-3.8-flash',
+  geminiApiKey: '',
 };
 
 const KEY = 'notebook:settings';
 const listeners = new Set<() => void>();
 let current: Settings | null = null;
 
+const VALID_GEMINI_MODELS = new Set<GeminiModel>(['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-4-argon']);
+
 function load(): Settings {
   try {
     const raw = window.localStorage.getItem(KEY);
-    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
+    if (!raw) return DEFAULT_SETTINGS;
+    const parsed = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } as Settings;
+    if (!VALID_GEMINI_MODELS.has(parsed.geminiModel)) {
+      parsed.geminiModel = DEFAULT_SETTINGS.geminiModel;
+    }
+    return parsed;
   } catch {
     return DEFAULT_SETTINGS;
   }

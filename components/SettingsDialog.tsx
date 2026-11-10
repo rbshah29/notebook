@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Dialog from '@/components/ui/Dialog';
+import { useAiAllowed } from '@/lib/gemini';
 import { updateSettings, useSettings, type Settings } from '@/lib/settings';
 import { applyTheme, readTheme, type ThemePreference } from '@/lib/theme';
 
@@ -51,6 +52,7 @@ function ThemeSetting() {
 
 export default function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const s = useSettings();
+  const aiAllowed = useAiAllowed();
   const set = <K extends keyof Settings>(key: K) => (value: Settings[K]) => updateSettings({ [key]: value });
 
   return (
@@ -77,6 +79,32 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
         <h3>Editing</h3>
         <Toggle label="Spell check" checked={s.spellcheck} onChange={set('spellcheck')} />
       </section>
+      {aiAllowed && (
+        <section className="settings-group">
+          <h3>AI (Gemini)</h3>
+          <Segmented label="Model" value={s.geminiModel} onChange={set('geminiModel')}
+            options={[
+              { value: 'gemini-3.8-flash', label: '3.8 Flash' },
+              { value: 'gemini-flash-latest', label: 'Flash Latest' },
+              { value: 'gemini-4-argon', label: '4 Argon' },
+            ]} />
+          <label className="setting">
+            <span>
+              <span className="setting-label">API key</span>
+              <span className="setting-hint">Optional if GEMINI_API_KEY is set in .env.local</span>
+            </span>
+            <input
+              type="password"
+              className="setting-input"
+              placeholder="AIza…"
+              value={s.geminiApiKey}
+              onChange={(e) => set('geminiApiKey')(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+        </section>
+      )}
     </Dialog>
   );
 }

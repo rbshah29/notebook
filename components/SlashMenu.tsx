@@ -6,8 +6,9 @@ import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from '@
 import { PluginKey } from '@tiptap/pm/state';
 import {
   Pilcrow, Heading1, Heading2, Heading3, List, ListOrdered, ListChecks, Quote, SquareCode, Minus,
-  Table, Image, ChevronRight, type LucideIcon,
+  Table, Image, ChevronRight, Sparkles, Wand2, FileText, type LucideIcon,
 } from 'lucide-react';
+import { isAiAllowed, openEditorAiPrompt, runEditorAi } from '@/lib/gemini';
 import { CALLOUTS, type CalloutVariant } from './Callout';
 import { pickImages } from './ImageUpload';
 
@@ -16,12 +17,19 @@ type SlashItem = {
   description: string;
   icon: LucideIcon;
   keywords?: string;
+  aiOnly?: boolean;
   run: (editor: Editor, range: Range) => void;
 };
 
 const chain = (editor: Editor, range: Range) => editor.chain().focus().deleteRange(range);
 
 const ITEMS: SlashItem[] = [
+  { title: 'Ask AI', description: 'Generate or edit with Gemini', icon: Sparkles, keywords: 'ai gemini ask prompt generate', aiOnly: true,
+    run: (e, r) => { chain(e, r).run(); openEditorAiPrompt(e); } },
+  { title: 'Continue writing', description: 'Let Gemini continue from here', icon: Wand2, keywords: 'ai gemini continue write autocomplete', aiOnly: true,
+    run: (e, r) => { chain(e, r).run(); void runEditorAi(e, 'continue'); } },
+  { title: 'Summarize note', description: 'Create an AI summary callout', icon: FileText, keywords: 'ai gemini summary summarize tldr', aiOnly: true,
+    run: (e, r) => { chain(e, r).run(); void runEditorAi(e, 'summarize'); } },
   { title: 'Text', description: 'Plain paragraph', icon: Pilcrow, keywords: 'paragraph p',
     run: (e, r) => chain(e, r).setParagraph().run() },
   { title: 'Heading 1', description: 'Large section heading', icon: Heading1, keywords: 'h1 title',
@@ -58,9 +66,11 @@ const ITEMS: SlashItem[] = [
 ];
 
 function filterItems(query: string) {
+  const allowed = isAiAllowed();
+  const available = allowed ? ITEMS : ITEMS.filter((item) => !item.aiOnly);
   const q = query.toLowerCase().trim();
-  if (!q) return ITEMS;
-  return ITEMS
+  if (!q) return available;
+  return available
     .map((item) => {
       const title = item.title.toLowerCase();
       const score = title.startsWith(q) ? 0 : title.includes(q) ? 1 : item.keywords?.includes(q) ? 2 : -1;
