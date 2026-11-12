@@ -3,7 +3,7 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, u
 import { useEditor, useEditorState, EditorContent, type Editor as TiptapEditor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { NodeSelection } from '@tiptap/pm/state';
-import { Bold, Italic, Underline, Strikethrough, Code, Highlighter, Link2, Sparkles } from 'lucide-react';
+import { Bold, Italic, Underline, Strikethrough, Code, Highlighter, Link2, Sparkles, BrushCleaning } from 'lucide-react';
 import { useAiAllowed, type AiStatusDetail } from '@/lib/gemini';
 import { updateNote, formatFull, type Note, type NotePatch } from '@/lib/notes';
 import { keys } from '@/lib/shortcuts';
@@ -11,6 +11,7 @@ import { useSettings } from '@/lib/settings';
 import Toolbar, { ToolButton, LinkForm, AiPromptForm } from './Toolbar';
 import { refreshCodeBlocks } from './CodeBlock';
 import { buildExtensions } from './extensions';
+import { tidySelection } from './Tidy';
 import { useToast } from './ui/Toast';
 
 export type EditorHandle = {
@@ -301,6 +302,7 @@ export default function Editor({ note, autoFocus, scratch = false, onChange, lea
 
 function BubbleMarks({ editor, onLink, onAi }: { editor: TiptapEditor; onLink: () => void; onAi: () => void }) {
   const aiAllowed = useAiAllowed();
+  const toast = useToast();
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -315,9 +317,14 @@ function BubbleMarks({ editor, onLink, onAi }: { editor: TiptapEditor; onLink: (
       {aiAllowed && (
         <>
           <ToolButton label="Ask Gemini" onClick={onAi}><Sparkles size={15} /></ToolButton>
-          <span className="tb-sep" />
         </>
       )}
+      <ToolButton label="Tidy up (tables, lists, wrapped lines, spacing)" onClick={() => {
+        const result = tidySelection(editor);
+        if (result === 'unchanged') toast({ message: 'Already tidy.' });
+        else if (result === 'unsupported') toast({ tone: 'error', message: 'Can’t tidy this selection here.' });
+      }}><BrushCleaning size={15} /></ToolButton>
+      <span className="tb-sep" />
       <ToolButton label="Bold" shortcut={keys('Mod+B')} active={s.bold} onClick={() => c().toggleBold().run()}><Bold size={15} /></ToolButton>
       <ToolButton label="Italic" shortcut={keys('Mod+I')} active={s.italic} onClick={() => c().toggleItalic().run()}><Italic size={15} /></ToolButton>
       <ToolButton label="Underline" shortcut={keys('Mod+U')} active={s.underline} onClick={() => c().toggleUnderline().run()}><Underline size={15} /></ToolButton>

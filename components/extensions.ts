@@ -13,6 +13,7 @@ import { Callout } from './Callout';
 import { ImageUpload } from './ImageUpload';
 import { SearchHighlight } from './SearchHighlight';
 import { SlashCommand } from './SlashMenu';
+import { SmartPaste } from './SmartPaste';
 
 /**
  * Everything a note can contain. The share page uses the same list read-only, so a shared note
@@ -49,6 +50,7 @@ export function buildExtensions({ editable, onError = () => {} }: {
         },
       }),
       ImageUpload.configure({ onError }),
+      SmartPaste,
       SlashCommand,
     ] : []),
   ];
